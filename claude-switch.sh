@@ -31,11 +31,18 @@ cl-add() {
   local profile="$1"
   [[ -z "$profile" ]] && { echo "usage: cl-add <profile>" >&2; return 1; }
   echo "Get a token first: claude setup-token  (log in with the '$profile' account)"
+  # disable bracketed paste so pasted tokens aren't wrapped/duplicated with escape bytes
+  print -n '\e[?2004l' 2>/dev/null
   local token
   read -rs "token?OAuth token for '$profile': "; echo
+  print -n '\e[?2004h' 2>/dev/null
+  # sanitize: drop bracketed-paste markers, cut at first control char, strip whitespace
+  token="${token#$'\e[200~'}"
+  token="${token%$'\e[201~'}"
+  token=$(printf '%s' "$token" | LC_ALL=C sed 's/[[:cntrl:]].*//' | tr -d '[:space:]')
   [[ -z "$token" ]] && { echo "Empty token, aborted." >&2; return 1; }
   security add-generic-password -U -s "claude-oauth-$profile" -a "$USER" -w "$token" \
-    && echo "Saved profile '$profile'."
+    && echo "Saved profile '$profile' (${#token} chars)."
 }
 
 # Remove a profile: cl-rm personal
