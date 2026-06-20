@@ -41,7 +41,9 @@ cl-add() {
   token="${token%$'\e[201~'}"
   token=$(printf '%s' "$token" | LC_ALL=C sed 's/[[:cntrl:]].*//' | tr -d '[:space:]')
   [[ -z "$token" ]] && { echo "Empty token, aborted." >&2; return 1; }
-  security add-generic-password -U -s "claude-oauth-$profile" -a "$USER" -w "$token" \
+  # overwrite cleanly: drop any existing entry first, then store fresh (never duplicates)
+  security delete-generic-password -s "claude-oauth-$profile" -a "$USER" >/dev/null 2>&1
+  security add-generic-password -s "claude-oauth-$profile" -a "$USER" -w "$token" \
     && echo "Saved profile '$profile' (${#token} chars)."
 }
 
