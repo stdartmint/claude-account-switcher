@@ -56,6 +56,27 @@ cl-rm() {
     || echo "No profile '$profile'." >&2
 }
 
+# Verify which account a profile maps to: cl-whoami personal
+# Makes a tiny (1-token) API call and prints the org id. setup-token tokens
+# lack profile scope, so email isn't available, but the org id uniquely
+# identifies the account — different ids = different accounts.
+cl-whoami() {
+  local profile="$1"
+  [[ -z "$profile" ]] && { echo "usage: cl-whoami <profile>" >&2; return 1; }
+  local tok; tok=$(security find-generic-password -s "claude-oauth-$profile" -a "$USER" -w 2>/dev/null)
+  [[ -z "$tok" ]] && { echo "No token for profile '$profile'." >&2; return 1; }
+  local org
+  org=$(curl -s -m 20 -D - -o /dev/null https://api.anthropic.com/v1/messages \
+    -H "Authorization: Bearer $tok" \
+    -H "anthropic-beta: oauth-2025-04-20" \
+    -H "anthropic-version: 2023-06-01" \
+    -H "content-type: application/json" \
+    -d '{"model":"claude-haiku-4-5-20251001","max_tokens":1,"messages":[{"role":"user","content":"hi"}]}' \
+    2>/dev/null | grep -i '^anthropic-organization-id:' | tr -d '\r' | awk '{print $2}')
+  [[ -z "$org" ]] && { echo "$profile: auth FAILED (token invalid or expired)" >&2; return 1; }
+  echo "$profile: ok, org-id $org"
+}
+
 # List saved profiles
 cl-list() {
   security dump-keychain 2>/dev/null \
