@@ -56,15 +56,13 @@ cl-rm() {
     || echo "No profile '$profile'." >&2
 }
 
-# Verify which account a profile maps to: cl-whoami personal
-# Makes a tiny (1-token) API call and prints the org id. setup-token tokens
-# lack profile scope, so email isn't available, but the org id uniquely
-# identifies the account — different ids = different accounts.
-cl-whoami() {
+# Probe one profile: prints org-id (uniquely identifies the account).
+# setup-token tokens lack profile scope, so email isn't available — org-id is
+# the reliable discriminator (different ids = different accounts).
+_cl_whoami_one() {
   local profile="$1"
-  [[ -z "$profile" ]] && { echo "usage: cl-whoami <profile>" >&2; return 1; }
   local tok; tok=$(security find-generic-password -s "claude-oauth-$profile" -a "$USER" -w 2>/dev/null)
-  [[ -z "$tok" ]] && { echo "No token for profile '$profile'." >&2; return 1; }
+  [[ -z "$tok" ]] && { echo "$profile: no token saved"; return 1; }
   local org
   org=$(curl -s -m 20 -D - -o /dev/null https://api.anthropic.com/v1/messages \
     -H "Authorization: Bearer $tok" \
@@ -73,8 +71,21 @@ cl-whoami() {
     -H "content-type: application/json" \
     -d '{"model":"claude-haiku-4-5-20251001","max_tokens":1,"messages":[{"role":"user","content":"hi"}]}' \
     2>/dev/null | grep -i '^anthropic-organization-id:' | tr -d '\r' | awk '{print $2}')
-  [[ -z "$org" ]] && { echo "$profile: auth FAILED (token invalid or expired)" >&2; return 1; }
+  [[ -z "$org" ]] && { echo "$profile: auth FAILED (token invalid or expired)"; return 1; }
   echo "$profile: ok, org-id $org"
+}
+
+# Verify which account profiles map to: cl-whoami [profile]
+# With no argument, checks every saved profile. Each check is a tiny (1-token) call.
+cl-whoami() {
+  if [[ -n "$1" ]]; then _cl_whoami_one "$1"; return $?; fi
+  local profiles
+  profiles=$(security dump-keychain 2>/dev/null \
+    | grep '"svce"<blob>="claude-oauth-' \
+    | sed 's/.*claude-oauth-//; s/"$//' | sort -u)
+  [[ -z "$profiles" ]] && { echo "No profiles saved. Add one with: cl-add <profile>" >&2; return 1; }
+  local p
+  for p in ${(f)profiles}; do _cl_whoami_one "$p"; done
 }
 
 # List saved profiles
